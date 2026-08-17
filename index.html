@@ -500,12 +500,12 @@ function defaultState(){
     classes: [],
     jobs: JOB_DEFS.map((j,i)=>({id:'job'+i, ...j, lastCompleted:null})),
     market: {
-      game:            {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0},
-      game_friend:     {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0},
-      tv_with_hw:      {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0},
-      tv_without_hw:   {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0},
-      free_with_hw:    {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0},
-      free_without_hw: {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0},
+      game:            {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0, outOfTimeAt:null, cooldownUntil:null},
+      game_friend:     {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0, outOfTimeAt:null, cooldownUntil:null},
+      tv_with_hw:      {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0, outOfTimeAt:null, cooldownUntil:null},
+      tv_without_hw:   {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0, outOfTimeAt:null, cooldownUntil:null},
+      free_with_hw:    {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0, outOfTimeAt:null, cooldownUntil:null},
+      free_without_hw: {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0, outOfTimeAt:null, cooldownUntil:null},
     },
     log: []
   };
@@ -891,9 +891,14 @@ function marketItems(){
 }
 
 function buyMarket(category, minInput, hourInput){
+  const cat = state.market[category];
+  const now = Date.now();
+  if(cat.cooldownUntil && cat.cooldownUntil>now){
+    toast(`${MARKET_LABELS[category]} is on cooldown for ${fmtDuration(cat.cooldownUntil-now)}.`);
+    return;
+  }
   const mins = (parseFloat(document.getElementById(minInput).value)||0) + (parseFloat(document.getElementById(hourInput).value)||0)*60;
   if(mins<=0){ toast('Enter a time to buy.'); return; }
-  const cat = state.market[category];
   const newTotal = cat.total + mins;
   const fullCost = Math.ceil(marketCost(category, newTotal));
   const due = Math.max(0, fullCost - cat.paid);
@@ -901,7 +906,9 @@ function buyMarket(category, minInput, hourInput){
   state.points -= due;
   cat.total = newTotal;
   cat.paid += due;
-  cat.sessionEnd = Math.max(cat.sessionEnd||0, Date.now()) + mins*60000;
+  cat.sessionEnd = Math.max(cat.sessionEnd||0, now) + mins*60000;
+  cat.outOfTimeAt = null; // renewed in time, cancel the cooldown countdown
+  notified.delete(category);
   addLog('spend', due, MARKET_LABELS[category]+' ('+mins+'m)');
   document.getElementById(minInput).value='';
   document.getElementById(hourInput).value='';
@@ -918,20 +925,24 @@ function renderMarket(){
   statusEl.innerHTML = `<span class="dot ${hs}"></span> ${statusText}`;
 
   const items = marketItems();
+  const nowTs = Date.now();
   document.getElementById('marketGrid').innerHTML = items.map(it=>{
     const cat = state.market[it.key];
-    const now = Date.now();
+    const now = nowTs;
     const active = (cat.sessionEnd && cat.sessionEnd>now) || cat.paused;
+    const onCooldown = cat.cooldownUntil && cat.cooldownUntil>now;
+    const buyLocked = it.locked || onCooldown;
     const minId = 'buyMin-'+it.key, hrId = 'buyHr-'+it.key;
     return `
     <div class="market-card ${it.locked?'locked':''}">
       <h4>${it.label}</h4>
       <div class="stat-line">total bought: ${cat.total}m · spent: ${cat.paid}pt</div>
       ${it.key==='free_without_hw' ? '<div class="stat-line">Free while no homework is outstanding.</div>' : ''}
+      ${onCooldown ? `<div class="stat-line" style="color:var(--brick); font-weight:600;">On cooldown — ${fmtDuration(cat.cooldownUntil-now)}</div>` : ''}
       <div class="buy-row">
-        <input type="number" min="0" id="${minId}" placeholder="min" ${it.locked?'disabled':''}>
-        <input type="number" min="0" id="${hrId}" placeholder="hr" ${it.locked?'disabled':''}>
-        <button class="btn small ${it.locked?'ghost':'brass'}" ${it.locked?'disabled':''} onclick="buyMarket('${it.key}','${minId}','${hrId}')">Buy</button>
+        <input type="number" min="0" id="${minId}" placeholder="min" ${buyLocked?'disabled':''}>
+        <input type="number" min="0" id="${hrId}" placeholder="hr" ${buyLocked?'disabled':''}>
+        <button class="btn small ${buyLocked?'ghost':'brass'}" ${buyLocked?'disabled':''} onclick="buyMarket('${it.key}','${minId}','${hrId}')">Buy</button>
       </div>
       ${active ? `
       <div class="session-banner ${cat.paused?'paused':''}">
@@ -970,18 +981,37 @@ function resumeSession(key){
 const notified = new Set();
 function tickSessions(){
   const now = Date.now();
+  let marketNeedsRefresh = false;
   Object.entries(state.market).forEach(([key,cat])=>{
     if(cat.paused) return; // frozen — nothing to tick
+
+    // clear an expired cooldown
+    if(cat.cooldownUntil && cat.cooldownUntil<=now){
+      cat.cooldownUntil = null;
+      marketNeedsRefresh = true;
+    }
+
     const el = document.getElementById('cd-'+key);
     if(cat.sessionEnd){
       if(cat.sessionEnd>now && el){
         el.textContent = fmtDuration(cat.sessionEnd-now);
       } else if(cat.sessionEnd<=now && !notified.has(key)){
         notified.add(key);
+        cat.outOfTimeAt = now;
         notifyOutOfTime(MARKET_LABELS[key]);
+        marketNeedsRefresh = true;
       }
     }
+
+    // no renewal within 5 minutes of running out → lock that category for 30 minutes
+    if(cat.outOfTimeAt && !cat.cooldownUntil && (now - cat.outOfTimeAt) >= 5*60000){
+      cat.cooldownUntil = now + 30*60000;
+      cat.outOfTimeAt = null;
+      marketNeedsRefresh = true;
+      toast(`${MARKET_LABELS[key]} is on a 30-minute cooldown after running out unrenewed.`);
+    }
   });
+  if(marketNeedsRefresh){ save(); }
   // refresh job cooldown labels without a full re-render (avoids yanking focus out of inputs)
   if(document.getElementById('sec-jobs').classList.contains('active')) updateJobCooldowns();
 }
