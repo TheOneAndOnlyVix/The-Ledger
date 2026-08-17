@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Ledger — Focus & Free Time</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --parchment:#efe6d2;
+    --panel:#f8f2e4;
+    --panel-line:#d9c9a3;
+    --ink:#242a20;
+    --ink-soft:#5c5847;
+    --brass:#a9812f;
+    --brass-deep:#8a691f;
+    --forest:#38553f;
+    --forest-deep:#28402e;
+    --brick:#8b3a2b;
+    --teal:#2c5f5a;
+    --slate:#3c4f63;
+    --shadow: 0 2px 10px rgba(36,42,32,0.12);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 15% 10%, rgba(169,129,47,0.07), transparent 40%),
+      var(--parchment);
+    color:var(--ink);
+    font-family:'Inter', sans-serif;
+    min-height:100vh;
+  }
+
+  .app{
+    max-width:1100px;
+    margin:0 auto;
+    padding:20px 20px 60px;
+  }
+
+  /* ---------- Header ---------- */
+  header.top{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    padding-bottom:18px;
+    margin-bottom:22px;
+    border-bottom:2px solid var(--ink);
+  }
+  .brand{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  .brand h1{
+    font-family:'Fraunces', serif;
+    font-weight:700;
+    font-size:30px;
+    margin:0;
+    letter-spacing:0.2px;
+  }
+  .brand span.sub{
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:1.5px;
+    color:var(--ink-soft);
+  }
+  .balance-coin{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    background:var(--ink);
+    color:var(--parchment);
+    border-radius:999px;
+    padding:8px 18px 8px 8px;
+    box-shadow:var(--shadow);
+  }
+  .balance-coin .coin{
+    width:34px;height:34px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #e8c874, var(--brass) 60%, var(--brass-deep) 100%);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Fraunces',serif;font-weight:700;color:#3a2c0c;font-size:16px;
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,0.35);
+  }
+  .balance-coin .num{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:20px;
+    font-weight:600;
+  }
+  .balance-coin .lbl{
+    font-size:10px;text-transform:uppercase;letter-spacing:1px;opacity:0.75;
+  }
+
+  /* ---------- Layout: tabs + page ---------- */
+  .layout{
+    display:flex;
+    gap:0;
+    align-items:flex-start;
+  }
+  nav.tabs{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    flex:0 0 168px;
+    margin-top:6px;
+  }
+  nav.tabs button{
+    all:unset;
+    cursor:pointer;
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:14.5px;
+    color:var(--panel);
+    padding:12px 14px 12px 16px;
+    border-radius:8px 2px 2px 8px;
+    position:relative;
+    transform:translateX(0);
+    transition:transform .15s ease, filter .15s ease;
+    box-shadow:var(--shadow);
+  }
+  nav.tabs button .n{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    opacity:0.75;
+    display:block;
+    margin-bottom:2px;
+  }
+  nav.tabs button:hover{ transform:translateX(4px); filter:brightness(1.08); }
+  nav.tabs button.active{ transform:translateX(10px); box-shadow: 0 3px 14px rgba(36,42,32,0.28); }
+  nav.tabs button[data-tab="tasks"]{ background:var(--slate); }
+  nav.tabs button[data-tab="homework"]{ background:var(--teal); }
+  nav.tabs button[data-tab="jobs"]{ background:var(--forest-deep); }
+  nav.tabs button[data-tab="market"]{ background:var(--brass-deep); color:#2c1f05;}
+  nav.tabs button[data-tab="activity"]{ background:var(--brick); }
+
+  main.page{
+    flex:1;
+    background:var(--panel);
+    border:1px solid var(--panel-line);
+    border-radius:4px 14px 14px 14px;
+    box-shadow:var(--shadow);
+    padding:26px 28px 34px;
+    min-height:520px;
+    position:relative;
+  }
+  main.page::before{
+    content:"";
+    position:absolute; inset:10px 10px auto 10px; height:0;
+  }
+  h2.page-title{
+    font-family:'Fraunces',serif;
+    font-size:22px;
+    margin:0 0 4px;
+  }
+  p.page-desc{
+    color:var(--ink-soft);
+    font-size:13.5px;
+    margin:0 0 22px;
+  }
+  .section{ display:none; }
+  .section.active{ display:block; animation:fade .25s ease; }
+  @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+
+  /* ---------- Generic bits ---------- */
+  .btn{
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:13px;
+    border:none;
+    border-radius:6px;
+    padding:9px 16px;
+    cursor:pointer;
+    background:var(--ink);
+    color:var(--parchment);
+    transition:filter .12s ease, transform .12s ease;
+  }
+  .btn:hover{ filter:brightness(1.15); }
+  .btn:active{ transform:scale(0.97); }
+  .btn.ghost{ background:transparent; color:var(--ink); box-shadow:inset 0 0 0 1.5px var(--panel-line); }
+  .btn.brass{ background:var(--brass); color:#2c1f05; }
+  .btn.small{ padding:6px 11px; font-size:12px; }
+  .btn:disabled{ opacity:0.4; cursor:not-allowed; }
+
+  input[type=text], input[type=date], input[type=number], textarea, select{
+    font-family:'Inter',sans-serif;
+    border:1.5px solid var(--panel-line);
+    background:#fffdf7;
+    border-radius:6px;
+    padding:8px 10px;
+    font-size:13.5px;
+    color:var(--ink);
+  }
+  input:focus, textarea:focus, select:focus{ outline:2px solid var(--brass); outline-offset:1px; }
+  label.field-label{ font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:var(--ink-soft); display:block; margin-bottom:4px;}
+
+  .empty{
+    border:1.5px dashed var(--panel-line);
+    border-radius:10px;
+    padding:26px;
+    text-align:center;
+    color:var(--ink-soft);
+    font-size:13.5px;
+  }
+
+  /* ---------- Tasks ---------- */
+  .task-form{
+    display:grid;
+    grid-template-columns:2fr 1fr 1fr auto;
+    gap:10px;
+    margin-bottom:18px;
+    align-items:end;
+  }
+  .task-form .desc-row{ grid-column:1/-1; }
+  .task-list{ display:flex; flex-direction:column; gap:8px; }
+  .task-card{
+    display:flex; align-items:flex-start; gap:12px;
+    background:#fffdf7;
+    border:1px solid var(--panel-line);
+    border-left:5px solid var(--slate);
+    border-radius:6px;
+    padding:12px 14px;
+  }
+  .task-card.pri-low{ border-left-color:var(--forest); }
+  .task-card.pri-medium{ border-left-color:var(--slate); }
+  .task-card.pri-high{ border-left-color:var(--brass-deep); }
+  .task-card.pri-urgent{ border-left-color:var(--brick); }
+  .task-card.done{ opacity:0.5; }
+  .task-card.done .t-title{ text-decoration:line-through; }
+  .task-card input[type=checkbox]{ margin-top:3px; width:16px; height:16px; accent-color:var(--forest);}
+  .task-main{ flex:1; }
+  .t-title{ font-weight:700; font-size:14.5px; }
+  .t-meta{ font-size:11.5px; color:var(--ink-soft); margin-top:2px; display:flex; gap:10px; flex-wrap:wrap;}
+  .t-desc{ font-size:13px; margin-top:5px; color:#4a4636;}
+  .tag{ display:inline-block; padding:2px 8px; border-radius:99px; font-size:10.5px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700; }
+  .tag.low{background:#e3ede4; color:var(--forest-deep);}
+  .tag.medium{background:#e4e9ee; color:var(--slate);}
+  .tag.high{background:#f3e6cf; color:var(--brass-deep);}
+  .tag.urgent{background:#f4dcd6; color:var(--brick);}
+
+  /* ---------- Homework ---------- */
+  .class-add{ display:flex; gap:8px; margin-bottom:20px; }
+  .class-add input{ flex:1; }
+  .classes-col{ max-width:560px; margin:0 auto; display:flex; flex-direction:column; gap:18px;}
+  .class-block{
+    background:#fffdf7; border:1px solid var(--panel-line); border-radius:8px; padding:14px 16px;
+  }
+  .class-block h3{ font-family:'Fraunces',serif; margin:0 0 8px; font-size:16.5px; display:flex; justify-content:space-between; align-items:center;}
+  .class-block h3 .rm{ font-size:11px; color:var(--brick); cursor:pointer; font-weight:600; }
+  .hw-row{ display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-top:1px dashed var(--panel-line); font-size:13.5px; }
+  .hw-row .due{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft); }
+  .hw-row .due.today{ color:var(--brick); font-weight:700; }
+  .hw-row .rm{ cursor:pointer; color:var(--ink-soft); font-size:12px; margin-left:10px;}
+  .add-hw-row{ display:flex; gap:6px; margin-top:10px; }
+  .add-hw-row input[type=text]{ flex:1; }
+  .plus-btn{
+    width:100%; margin-top:8px; border:1.5px dashed var(--panel-line); background:transparent;
+    border-radius:6px; padding:6px; cursor:pointer; color:var(--ink-soft); font-size:12.5px; font-weight:600;
+  }
+  .plus-btn:hover{ border-color:var(--brass); color:var(--brass-deep); }
+
+  /* ---------- Jobs ---------- */
+  .jobs-list{ display:flex; flex-direction:column; gap:8px; max-width:640px; }
+  .job-card{
+    display:flex; align-items:center; gap:10px;
+    background:#fffdf7; border:1px solid var(--panel-line); border-radius:6px; padding:10px 14px;
+  }
+  .job-card.locked{ opacity:0.55; }
+  .job-main{ flex:1; }
+  .job-name{ font-weight:700; font-size:13.5px; }
+  .job-meta{ font-size:11px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; margin-top:2px;}
+  .job-reward{ font-family:'IBM Plex Mono',monospace; font-weight:700; color:var(--forest-deep); font-size:13px; min-width:44px; text-align:right;}
+  .job-time-input{ width:64px; }
+  .cooldown-txt{ font-size:10.5px; color:var(--brick); font-family:'IBM Plex Mono',monospace;}
+
+  /* ---------- Market ---------- */
+  .market-status{
+    background:#fffdf7; border:1px solid var(--panel-line); border-radius:8px;
+    padding:12px 16px; margin-bottom:20px; font-size:13px; display:flex; align-items:center; gap:10px;
+  }
+  .market-status .dot{ width:10px;height:10px;border-radius:50%; }
+  .dot.clear{ background:var(--forest); }
+  .dot.pending{ background:var(--brass); }
+  .dot.due_today{ background:var(--brick); }
+  .market-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:16px; }
+  .market-card{
+    background:#fffdf7; border:1px solid var(--panel-line); border-radius:10px; padding:16px; display:flex; flex-direction:column; gap:8px;
+  }
+  .market-card.locked{ opacity:0.45; }
+  .market-card h4{ margin:0; font-family:'Fraunces',serif; font-size:16px; }
+  .market-card .stat-line{ font-size:11.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; }
+  .buy-row{ display:flex; gap:6px; margin-top:4px; align-items:center;}
+  .buy-row input{ width:56px; }
+  .session-banner{
+    background:var(--forest-deep); color:#f4f1e6; border-radius:8px; padding:10px 14px;
+    display:flex; justify-content:space-between; align-items:center; font-size:12.5px; margin-top:8px;
+  }
+  .session-banner .cd{ font-family:'IBM Plex Mono',monospace; font-weight:700; }
+  .toast-wrap{ position:fixed; bottom:18px; right:18px; display:flex; flex-direction:column; gap:10px; z-index:999; max-width:320px;}
+  .toast{
+    background:var(--ink); color:var(--parchment); padding:12px 16px; border-radius:8px; box-shadow:var(--shadow);
+    font-size:13px; display:flex; flex-direction:column; gap:8px; animation:fade .2s ease;
+  }
+  .toast button{ align-self:flex-start; }
+
+  /* ---------- Activity ---------- */
+  .stat-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:24px;}
+  .stat-card{ background:#fffdf7; border:1px solid var(--panel-line); border-radius:10px; padding:14px 16px;}
+  .stat-card .v{ font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; }
+  .stat-card .l{ font-size:11px; text-transform:uppercase; letter-spacing:0.6px; color:var(--ink-soft); margin-top:2px;}
+  .bar-row{ display:flex; align-items:center; gap:10px; font-size:12px; margin-bottom:6px; }
+  .bar-row .label{ width:150px; flex-shrink:0; color:var(--ink-soft);}
+  .bar-track{ flex:1; background:#e7ddc4; border-radius:99px; height:10px; overflow:hidden;}
+  .bar-fill{ height:100%; background:var(--brass); border-radius:99px; }
+  .log-list{ display:flex; flex-direction:column-reverse; gap:6px; max-height:280px; overflow-y:auto; margin-top:6px; }
+  .log-row{ display:flex; justify-content:space-between; font-size:12.5px; padding:6px 10px; background:#fffdf7; border-radius:6px; border:1px solid var(--panel-line);}
+  .log-row .amt.earn{ color:var(--forest-deep); font-family:'IBM Plex Mono',monospace; font-weight:700;}
+  .log-row .amt.spend{ color:var(--brick); font-family:'IBM Plex Mono',monospace; font-weight:700;}
+
+  .sync-status{
+    display:flex; align-items:center; gap:8px;
+    font-size:12px; color:var(--ink-soft);
+  }
+  .sync-status .dotpulse{
+    width:8px; height:8px; border-radius:50%; background:var(--forest);
+  }
+  .sync-status .dotpulse.off{ background:var(--brass); }
+  .sync-status button{
+    all:unset; cursor:pointer; font-weight:600; font-size:12px;
+    color:var(--ink); text-decoration:underline; text-underline-offset:2px;
+  }
+  .signin-gate{
+    position:fixed; inset:0; background:rgba(36,42,32,0.55);
+    display:flex; align-items:center; justify-content:center; z-index:1000;
+  }
+  .signin-card{
+    background:var(--panel); border-radius:14px; padding:32px 30px; max-width:340px;
+    text-align:center; box-shadow:0 10px 40px rgba(0,0,0,0.3);
+  }
+  .signin-card h2{ font-family:'Fraunces',serif; margin:0 0 8px; }
+  .signin-card p{ font-size:13px; color:var(--ink-soft); margin:0 0 18px; }
+
+  @media (max-width:760px){
+    .layout{ flex-direction:column; }
+    nav.tabs{ flex-direction:row; flex-wrap:wrap; width:100%; }
+    nav.tabs button{ transform:none !important; border-radius:8px; }
+    main.page{ border-radius:10px; width:100%; }
+    .task-form{ grid-template-columns:1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>The Ledger</h1>
+      <span class="sub">Chores fund free time</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <div id="syncStatus" class="sync-status"></div>
+      <div class="balance-coin">
+        <div class="coin">pt</div>
+        <div>
+          <div class="num" id="balanceNum">0</div>
+          <div class="lbl">Points on hand</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="tabs">
+      <button data-tab="tasks" class="active"><span class="n">01</span>Tasks</button>
+      <button data-tab="homework"><span class="n">02</span>Homework</button>
+      <button data-tab="jobs"><span class="n">03</span>Jobs</button>
+      <button data-tab="market"><span class="n">04</span>Market</button>
+      <button data-tab="activity"><span class="n">05</span>Activity</button>
+    </nav>
+
+    <main class="page">
+
+      <!-- PAGE 1: TASKS -->
+      <section class="section active" id="sec-tasks">
+        <h2 class="page-title">Tasks</h2>
+        <p class="page-desc">A standalone list, kept separate from the points economy. Only a title is required.</p>
+
+        <div class="task-form">
+          <div>
+            <label class="field-label">Title *</label>
+            <input type="text" id="taskTitle" placeholder="e.g. Email the landlord">
+          </div>
+          <div>
+            <label class="field-label">Due date</label>
+            <input type="date" id="taskDue">
+          </div>
+          <div>
+            <label class="field-label">Priority</label>
+            <select id="taskPriority">
+              <option value="">—</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="urgent">Urgent</option>
+            </select>
+          </div>
+          <div><button class="btn brass" onclick="addTask()">Add task</button></div>
+          <div class="desc-row">
+            <label class="field-label">Description</label>
+            <input type="text" id="taskDesc" placeholder="Optional detail">
+          </div>
+        </div>
+
+        <div class="task-list" id="taskList"></div>
+      </section>
+
+      <!-- PAGE 2: HOMEWORK -->
+      <section class="section" id="sec-homework">
+        <h2 class="page-title">Homework</h2>
+        <p class="page-desc">Every class, and what's due underneath it. This list also decides what's unlocked on the Market page.</p>
+
+        <div class="class-add">
+          <input type="text" id="newClassName" placeholder="Add a class (e.g. Chemistry)">
+          <button class="btn brass" onclick="addClass()">Add class</button>
+        </div>
+
+        <div class="classes-col" id="classesCol"></div>
+      </section>
+
+      <!-- PAGE 3: JOBS -->
+      <section class="section" id="sec-jobs">
+        <h2 class="page-title">Jobs</h2>
+        <p class="page-desc">Chores and maintenance, cheapest at top, most valuable at bottom. Beat the base time for a bonus; each job cools down after you complete it.</p>
+        <div class="jobs-list" id="jobsList"></div>
+      </section>
+
+      <!-- PAGE 4: MARKET -->
+      <section class="section" id="sec-market">
+        <h2 class="page-title">Market</h2>
+        <p class="page-desc">Spend points on entertainment, purchased in minutes. Prices climb the more you buy in one sitting — renewing later is priced off your running total.</p>
+        <div class="market-status" id="marketStatus"></div>
+        <div class="market-grid" id="marketGrid"></div>
+      </section>
+
+      <!-- PAGE 5: ACTIVITY MONITOR -->
+      <section class="section" id="sec-activity">
+        <h2 class="page-title">Activity Monitor</h2>
+        <p class="page-desc">Where the points came from, and where they went.</p>
+        <div class="stat-grid" id="statGrid"></div>
+        <h3 style="font-family:'Fraunces',serif; font-size:15px; margin-bottom:8px;">Minutes purchased by category</h3>
+        <div id="marketBars" style="margin-bottom:24px;"></div>
+        <h3 style="font-family:'Fraunces',serif; font-size:15px; margin-bottom:8px;">Recent activity</h3>
+        <div class="log-list" id="logList"></div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* ================= STATE ================= */
+const STORAGE_KEY = 'ledgerAppState_v1';
+
+const JOB_DEFS = [
+  {name:'Take out Lola',                          baseReward:5,  cooldownHours:2.5,  baseTimeMin:null},
+  {name:'Clean dining table',                     baseReward:7,  cooldownHours:3.5,  baseTimeMin:15},
+  {name:'Clean dining room',                      baseReward:10, cooldownHours:2.5,  baseTimeMin:20},
+  {name:'Clean dining room + sweep',               baseReward:15, cooldownHours:3,    baseTimeMin:25},
+  {name:'Do dishes',                              baseReward:20, cooldownHours:3,    baseTimeMin:25},
+  {name:'Clean dining room + sweep + mop',         baseReward:50, cooldownHours:72,   baseTimeMin:60},
+  {name:'Do dishes + clear dishwasher',            baseReward:27, cooldownHours:16,   baseTimeMin:45},
+  {name:'Do dishes + mop',                        baseReward:62, cooldownHours:96,   baseTimeMin:60},
+  {name:'Do dishes + clear dishwasher + mop',      baseReward:72, cooldownHours:96,   baseTimeMin:75},
+  {name:'Clean living room',                      baseReward:14, cooldownHours:3,    baseTimeMin:15},
+  {name:'Clean living room + sweep',               baseReward:19, cooldownHours:3.5,  baseTimeMin:25},
+  {name:'Clean living room + sweep + mop',         baseReward:60, cooldownHours:120,  baseTimeMin:75},
+  {name:'Continue laundry cycle',                  baseReward:41, cooldownHours:24,   baseTimeMin:15},
+  {name:'Continue laundry cycle + fold clothes',   baseReward:90, cooldownHours:24,   baseTimeMin:90},
+  {name:'Clean bathroom counter',                  baseReward:7,  cooldownHours:7,    baseTimeMin:10},
+  {name:'Clean bathroom',                          baseReward:90, cooldownHours:144,  baseTimeMin:180},
+  {name:'Clean room',                              baseReward:20, cooldownHours:4.5,  baseTimeMin:10},
+  {name:'Sweep second living room',                baseReward:16, cooldownHours:10,   baseTimeMin:10},
+].sort((a,b)=>a.baseReward-b.baseReward);
+
+function defaultState(){
+  return {
+    points: 0,
+    tasks: [],
+    classes: [],
+    jobs: JOB_DEFS.map((j,i)=>({id:'job'+i, ...j, lastCompleted:null})),
+    market: {
+      game:            {total:0, paid:0, sessionEnd:null},
+      game_friend:     {total:0, paid:0, sessionEnd:null},
+      tv_with_hw:      {total:0, paid:0, sessionEnd:null},
+      tv_without_hw:   {total:0, paid:0, sessionEnd:null},
+      free_with_hw:    {total:0, paid:0, sessionEnd:null},
+      free_without_hw: {total:0, paid:0, sessionEnd:null},
+    },
+    log: []
+  };
+}
+
+let state = loadLocal();
+function loadLocal(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+    // merge in case job list changed between versions
+    const def = defaultState();
+    return Object.assign(def, parsed, {
+      jobs: parsed.jobs && parsed.jobs.length ? parsed.jobs : def.jobs,
+      market: Object.assign(def.market, parsed.market || {})
+    });
+  }catch(e){ return defaultState(); }
+}
+
+/* ---- Firebase sync ---- */
+// Fill this in with your own project's config (see README section in the chat).
+const firebaseConfig = {
+  apiKey: "AIzaSyDipx_6e5qFzwjBKI-w_lAoKdVYWkZxT5I",
+  authDomain: "the-ledger-db553.firebaseapp.com",
+  projectId: "the-ledger-db553",
+  storageBucket: "the-ledger-db553.firebasestorage.app",
+  messagingSenderId: "905599261769",
+  appId: "1:905599261769:web:59bdd9a7fdcbea3db9f398"
+};
+
+let db=null, currentUser=null, unsubscribeSnapshot=null, saveTimer=null, applyingRemote=false;
+let firebaseReady = false;
+
+function initFirebase(){
+  if(firebaseConfig.apiKey === "YOUR_API_KEY"){
+    // Not configured yet — run in local-only mode.
+    setSyncStatus(false, 'Local only — Firebase not configured');
+    render();
+    return;
+  }
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+  firebaseReady = true;
+  firebase.auth().onAuthStateChanged(user=>{
+    if(user){
+      currentUser = user;
+      hideSignInGate();
+      setSyncStatus(true, user.displayName || user.email || 'Synced');
+      attachRemoteListener();
+    } else {
+      currentUser = null;
+      if(unsubscribeSnapshot){ unsubscribeSnapshot(); unsubscribeSnapshot=null; }
+      showSignInGate();
+      setSyncStatus(false, 'Not signed in');
+      render();
+    }
+  });
+}
+
+function signIn(){
+  const provider = new firebase.auth.GoogleAuthProvider();
+  firebase.auth().signInWithPopup(provider).catch(err=>{
+    toast('Sign-in failed: '+err.message);
+  });
+}
+function signOutUser(){
+  firebase.auth().signOut();
+}
+
+function attachRemoteListener(){
+  const ref = db.collection('ledgerApp').doc(currentUser.uid);
+  unsubscribeSnapshot = ref.onSnapshot(snap=>{
+    if(snap.exists){
+      applyingRemote = true;
+      const remote = snap.data().state;
+      const def = defaultState();
+      state = Object.assign(def, remote, {
+        jobs: remote.jobs && remote.jobs.length ? remote.jobs : def.jobs,
+        market: Object.assign(def.market, remote.market || {})
+      });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      applyingRemote = false;
+      render();
+    } else {
+      // first sign-in on this account: push whatever we have locally (often empty)
+      ref.set({state});
+    }
+  }, err=>{
+    setSyncStatus(false, 'Sync error — saved locally only');
+  });
+}
+
+function save(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  render();
+  if(applyingRemote) return; // don't echo back a write we just received
+  if(firebaseReady && currentUser){
+    setSyncStatus(true, 'Syncing…');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(()=>{
+      db.collection('ledgerApp').doc(currentUser.uid).set({state})
+        .then(()=> setSyncStatus(true, currentUser.displayName || currentUser.email || 'Synced'))
+        .catch(()=> setSyncStatus(false, 'Sync failed — saved locally'));
+    }, 600); // debounce rapid edits into one write
+  }
+}
+
+function setSyncStatus(ok, label){
+  const el = document.getElementById('syncStatus');
+  if(!el) return;
+  el.innerHTML = `<span class="dotpulse ${ok?'':'off'}"></span><span>${esc(label)}</span>` +
+    (currentUser ? ` <button onclick="signOutUser()">Sign out</button>` : '');
+}
+
+function showSignInGate(){
+  if(document.getElementById('signinGate')) return;
+  const div = document.createElement('div');
+  div.className = 'signin-gate';
+  div.id = 'signinGate';
+  div.innerHTML = `
+    <div class="signin-card">
+      <h2>Sign in to sync</h2>
+      <p>Sign in with Google to keep your points, tasks, and jobs in sync across every device. You can also continue without signing in — your data will stay on this device only.</p>
+      <button class="btn brass" onclick="signIn()" style="margin-bottom:10px; width:100%;">Sign in with Google</button>
+      <button class="btn ghost" onclick="hideSignInGate()" style="width:100%;">Continue on this device only</button>
+    </div>`;
+  document.body.appendChild(div);
+}
+function hideSignInGate(){
+  const el = document.getElementById('signinGate');
+  if(el) el.remove();
+}
+function uid(){ return Math.random().toString(36).slice(2,10); }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+
+function addLog(type, amount, label){
+  state.log.push({ts:Date.now(), type, amount, label});
+  if(state.log.length>500) state.log.shift();
+}
+
+/* ================= TABS ================= */
+document.querySelectorAll('nav.tabs button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('sec-'+btn.dataset.tab).classList.add('active');
+  });
+});
+
+/* ================= TASKS ================= */
+function addTask(){
+  const title = document.getElementById('taskTitle').value.trim();
+  if(!title){ toast('Give the task a title first.'); return; }
+  const task = {
+    id: uid(),
+    title,
+    description: document.getElementById('taskDesc').value.trim(),
+    dueDate: document.getElementById('taskDue').value,
+    priority: document.getElementById('taskPriority').value,
+    done:false,
+    created: Date.now()
+  };
+  state.tasks.push(task);
+  document.getElementById('taskTitle').value='';
+  document.getElementById('taskDesc').value='';
+  document.getElementById('taskDue').value='';
+  document.getElementById('taskPriority').value='';
+  save();
+}
+function toggleTask(id){
+  const t = state.tasks.find(t=>t.id===id); t.done=!t.done; save();
+}
+function deleteTask(id){
+  state.tasks = state.tasks.filter(t=>t.id!==id); save();
+}
+function renderTasks(){
+  const wrap = document.getElementById('taskList');
+  if(!state.tasks.length){ wrap.innerHTML = '<div class="empty">No tasks yet. Add one above — only a title is required.</div>'; return; }
+  const order = {urgent:0, high:1, medium:2, low:3, '':4};
+  const sorted = [...state.tasks].sort((a,b)=> (order[a.priority]??4) - (order[b.priority]??4));
+  wrap.innerHTML = sorted.map(t=>`
+    <div class="task-card pri-${t.priority||'medium'} ${t.done?'done':''}">
+      <input type="checkbox" ${t.done?'checked':''} onchange="toggleTask('${t.id}')">
+      <div class="task-main">
+        <div class="t-title">${esc(t.title)}</div>
+        ${t.description?`<div class="t-desc">${esc(t.description)}</div>`:''}
+        <div class="t-meta">
+          ${t.dueDate?`<span>Due ${t.dueDate}</span>`:''}
+          ${t.priority?`<span class="tag ${t.priority}">${t.priority}</span>`:''}
+        </div>
+      </div>
+      <button class="btn ghost small" onclick="deleteTask('${t.id}')">Remove</button>
+    </div>
+  `).join('');
+}
+
+/* ================= HOMEWORK ================= */
+function addClass(){
+  const name = document.getElementById('newClassName').value.trim();
+  if(!name) return;
+  state.classes.push({id:uid(), name, homework:[]});
+  document.getElementById('newClassName').value='';
+  save();
+}
+function deleteClass(id){
+  state.classes = state.classes.filter(c=>c.id!==id); save();
+}
+function addHomework(classId){
+  const nameInput = document.getElementById('hwName-'+classId);
+  const dueInput = document.getElementById('hwDue-'+classId);
+  const name = nameInput.value.trim();
+  if(!name){ toast('Name the assignment first.'); return; }
+  const cls = state.classes.find(c=>c.id===classId);
+  cls.homework.push({id:uid(), name, dueDate:dueInput.value});
+  nameInput.value=''; dueInput.value='';
+  save();
+}
+function removeHomework(classId, hwId){
+  const cls = state.classes.find(c=>c.id===classId);
+  cls.homework = cls.homework.filter(h=>h.id!==hwId);
+  save();
+}
+function renderHomework(){
+  const wrap = document.getElementById('classesCol');
+  if(!state.classes.length){ wrap.innerHTML = '<div class="empty">No classes yet. Add one above to start listing assignments.</div>'; return; }
+  const today = todayStr();
+  wrap.innerHTML = state.classes.map(c=>`
+    <div class="class-block">
+      <h3>${esc(c.name)} <span class="rm" onclick="deleteClass('${c.id}')">remove class</span></h3>
+      ${c.homework.length ? c.homework.map(h=>`
+        <div class="hw-row">
+          <span>${esc(h.name)}</span>
+          <span>
+            <span class="due ${h.dueDate===today?'today':''}">${h.dueDate?h.dueDate:'no date'}</span>
+            <span class="rm" onclick="removeHomework('${c.id}','${h.id}')">✕</span>
+          </span>
+        </div>
+      `).join('') : '<div style="font-size:12.5px;color:var(--ink-soft);padding:6px 0;">Nothing assigned.</div>'}
+      <div class="add-hw-row">
+        <input type="text" id="hwName-${c.id}" placeholder="Assignment name">
+        <input type="date" id="hwDue-${c.id}" style="width:150px;">
+        <button class="btn small brass" onclick="addHomework('${c.id}')">+</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* ================= JOBS ================= */
+function homeworkState(){
+  let hasAny=false, dueToday=false;
+  const today = todayStr();
+  state.classes.forEach(c=>c.homework.forEach(h=>{
+    hasAny = true;
+    if(h.dueDate===today) dueToday=true;
+  }));
+  if(dueToday) return 'due_today';
+  if(hasAny) return 'pending';
+  return 'clear';
+}
+function fmtDuration(ms){
+  if(ms<=0) return 'ready';
+  const mins = Math.ceil(ms/60000);
+  if(mins<60) return mins+'m left';
+  const hrs = mins/60;
+  if(hrs<24) return hrs.toFixed(1).replace('.0','')+'h left';
+  return (hrs/24).toFixed(1).replace('.0','')+'d left';
+}
+function completeJob(jobId){
+  const job = state.jobs.find(j=>j.id===jobId);
+  const now = Date.now();
+  if(job.lastCompleted && (now-job.lastCompleted) < job.cooldownHours*3600000){
+    toast(job.name+' is still cooling down.'); return;
+  }
+  let reward = job.baseReward;
+  if(job.baseTimeMin){
+    const input = document.getElementById('jobTime-'+jobId);
+    const actual = parseFloat(input.value);
+    if(!actual || actual<=0){ toast('Enter how many minutes it took.'); return; }
+    const pctLess = (job.baseTimeMin - actual)/job.baseTimeMin;
+    const multiplier = Math.max(0.1, 1+pctLess); // floor so a slow job still pays something
+    reward = Math.max(1, Math.round(job.baseReward * multiplier));
+    input.value='';
+  }
+  job.lastCompleted = now;
+  state.points += reward;
+  addLog('earn', reward, job.name);
+  save();
+  toast(`+${reward} pts — ${job.name}`);
+}
+function renderJobs(){
+  const wrap = document.getElementById('jobsList');
+  const now = Date.now();
+  wrap.innerHTML = state.jobs.map(j=>{
+    const remain = j.lastCompleted ? (j.lastCompleted + j.cooldownHours*3600000) - now : 0;
+    const locked = remain>0;
+    return `
+    <div class="job-card ${locked?'locked':''}">
+      <div class="job-main">
+        <div class="job-name">${esc(j.name)}</div>
+        <div class="job-meta">base ${j.baseReward} pt · cooldown ${fmtCooldown(j.cooldownHours)} ${j.baseTimeMin?('· base time '+fmtMins(j.baseTimeMin)):''}</div>
+        ${locked?`<div class="cooldown-txt">${fmtDuration(remain)}</div>`:''}
+      </div>
+      ${j.baseTimeMin?`<input type="number" min="1" class="job-time-input" id="jobTime-${j.id}" placeholder="mins" ${locked?'disabled':''}>`:''}
+      <div class="job-reward">${j.baseReward}pt</div>
+      <button class="btn small ${locked?'ghost':'brass'}" ${locked?'disabled':''} onclick="completeJob('${j.id}')">Done</button>
+    </div>`;
+  }).join('');
+}
+function fmtCooldown(h){
+  if(h<24) return h+'h';
+  return (h/24)+'d';
+}
+function fmtMins(m){
+  if(m<60) return m+'m';
+  return (m/60)+'h';
+}
+
+/* ================= MARKET ================= */
+function marketCost(category, totalMinutes){
+  if(category==='free_without_hw') return 0;
+  const t = totalMinutes;
+  switch(category){
+    case 'game_friend':      return Math.pow((t*1.3)/4, 1.2);
+    case 'game':             return Math.pow((t*1.2)/4, 1.2);
+    case 'tv_without_hw':    return Math.pow((t*1.2)/6, 1.1);
+    case 'free_with_hw':     return Math.pow((t*1.2)/4, 1.2);
+    case 'tv_with_hw':       return Math.pow((t*1.2)/4, 1.2);
+  }
+  return 0;
+}
+const MARKET_LABELS = {
+  game:'Game (solo)', game_friend:'Game with a Friend',
+  tv_with_hw:'TV Time', tv_without_hw:'TV Time',
+  free_with_hw:'Free Time', free_without_hw:'Free Time'
+};
+
+function marketItems(){
+  const hs = homeworkState();
+  return [
+    {key: hs==='clear' ? 'free_without_hw':'free_with_hw', label:'Free Time', locked:false, hs},
+    {key: hs==='clear' ? 'tv_without_hw':'tv_with_hw',      label:'TV Time',   locked: hs==='due_today', hs},
+    {key:'game',        label:'Game (solo)',        locked: hs!=='clear', hs},
+    {key:'game_friend', label:'Game with a Friend',  locked: hs!=='clear', hs},
+  ];
+}
+
+function buyMarket(category, minInput, hourInput){
+  const mins = (parseFloat(document.getElementById(minInput).value)||0) + (parseFloat(document.getElementById(hourInput).value)||0)*60;
+  if(mins<=0){ toast('Enter a time to buy.'); return; }
+  const cat = state.market[category];
+  const newTotal = cat.total + mins;
+  const fullCost = Math.ceil(marketCost(category, newTotal));
+  const due = Math.max(0, fullCost - cat.paid);
+  if(due > state.points){ toast(`Not enough points — needs ${due}, you have ${state.points}.`); return; }
+  state.points -= due;
+  cat.total = newTotal;
+  cat.paid += due;
+  cat.sessionEnd = Math.max(cat.sessionEnd||0, Date.now()) + mins*60000;
+  addLog('spend', due, MARKET_LABELS[category]+' ('+mins+'m)');
+  document.getElementById(minInput).value='';
+  document.getElementById(hourInput).value='';
+  save();
+  toast(due>0 ? `-${due} pts — ${mins}m of ${MARKET_LABELS[category]}` : `${mins}m of ${MARKET_LABELS[category]} — free`);
+}
+
+function renderMarket(){
+  const hs = homeworkState();
+  const statusEl = document.getElementById('marketStatus');
+  const statusText = hs==='due_today' ? 'Homework due today — only Free Time is unlocked.'
+    : hs==='pending' ? 'Homework pending, none due today — Free Time and TV Time are unlocked.'
+    : 'No homework outstanding — everything is unlocked.';
+  statusEl.innerHTML = `<span class="dot ${hs}"></span> ${statusText}`;
+
+  const items = marketItems();
+  document.getElementById('marketGrid').innerHTML = items.map(it=>{
+    const cat = state.market[it.key];
+    const now = Date.now();
+    const active = cat.sessionEnd && cat.sessionEnd>now;
+    const minId = 'buyMin-'+it.key, hrId = 'buyHr-'+it.key;
+    return `
+    <div class="market-card ${it.locked?'locked':''}">
+      <h4>${it.label}</h4>
+      <div class="stat-line">total bought: ${cat.total}m · spent: ${cat.paid}pt</div>
+      ${it.key==='free_without_hw' ? '<div class="stat-line">Free while no homework is outstanding.</div>' : ''}
+      <div class="buy-row">
+        <input type="number" min="0" id="${minId}" placeholder="min" ${it.locked?'disabled':''}>
+        <input type="number" min="0" id="${hrId}" placeholder="hr" ${it.locked?'disabled':''}>
+        <button class="btn small ${it.locked?'ghost':'brass'}" ${it.locked?'disabled':''} onclick="buyMarket('${it.key}','${minId}','${hrId}')">Buy</button>
+      </div>
+      ${active ? `<div class="session-banner"><span>Session running</span><span class="cd" data-end="${cat.sessionEnd}" id="cd-${it.key}"></span></div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+/* ---- session countdown / expiry notifications ---- */
+const notified = new Set();
+function tickSessions(){
+  const now = Date.now();
+  Object.entries(state.market).forEach(([key,cat])=>{
+    const el = document.getElementById('cd-'+key);
+    if(cat.sessionEnd){
+      if(cat.sessionEnd>now && el){
+        el.textContent = fmtDuration(cat.sessionEnd-now);
+      } else if(cat.sessionEnd<=now && !notified.has(key)){
+        notified.add(key);
+        notifyOutOfTime(MARKET_LABELS[key]);
+      }
+    }
+  });
+  // refresh job cooldown labels without a full re-render flash
+  if(document.getElementById('sec-jobs').classList.contains('active')) renderJobs();
+}
+setInterval(tickSessions, 1000);
+
+function notifyOutOfTime(label){
+  toast(`⏱ Out of time on ${label}. Head to the Market to renew.`, true);
+  if('Notification' in window && Notification.permission==='granted'){
+    new Notification("Time's up", {body:`${label} has run out. Renew it in the Market.`});
+  }
+}
+if('Notification' in window && Notification.permission==='default'){
+  document.addEventListener('click', function reqOnce(){
+    Notification.requestPermission();
+    document.removeEventListener('click', reqOnce);
+  }, {once:true});
+}
+
+/* ================= ACTIVITY MONITOR ================= */
+function renderActivity(){
+  const earned = state.log.filter(l=>l.type==='earn').reduce((s,l)=>s+l.amount,0);
+  const spent = state.log.filter(l=>l.type==='spend').reduce((s,l)=>s+l.amount,0);
+  const jobsDone = state.log.filter(l=>l.type==='earn').length;
+  document.getElementById('statGrid').innerHTML = `
+    <div class="stat-card"><div class="v">${state.points}</div><div class="l">Current balance</div></div>
+    <div class="stat-card"><div class="v">${earned}</div><div class="l">Total earned</div></div>
+    <div class="stat-card"><div class="v">${spent}</div><div class="l">Total spent</div></div>
+    <div class="stat-card"><div class="v">${jobsDone}</div><div class="l">Jobs completed</div></div>
+    <div class="stat-card"><div class="v">${state.tasks.filter(t=>!t.done).length}</div><div class="l">Open tasks</div></div>
+    <div class="stat-card"><div class="v">${state.classes.reduce((s,c)=>s+c.homework.length,0)}</div><div class="l">Homework items</div></div>
+  `;
+
+  const maxMin = Math.max(1, ...Object.values(state.market).map(c=>c.total));
+  document.getElementById('marketBars').innerHTML = Object.entries(state.market).map(([key,cat])=>`
+    <div class="bar-row">
+      <div class="label">${MARKET_LABELS[key]}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${(cat.total/maxMin*100).toFixed(1)}%"></div></div>
+      <div style="font-family:'IBM Plex Mono',monospace; width:52px; text-align:right;">${cat.total}m</div>
+    </div>
+  `).join('');
+
+  const logEl = document.getElementById('logList');
+  if(!state.log.length){ logEl.innerHTML = '<div class="empty">Nothing logged yet.</div>'; }
+  else {
+    logEl.innerHTML = state.log.slice(-60).map(l=>`
+      <div class="log-row">
+        <span>${esc(l.label)}</span>
+        <span class="amt ${l.type}">${l.type==='earn'?'+':'-'}${l.amount}</span>
+      </div>
+    `).join('');
+  }
+}
+
+/* ================= TOAST ================= */
+function toast(msg, sticky){
+  const wrap = document.getElementById('toastWrap');
+  const el = document.createElement('div');
+  el.className='toast';
+  el.innerHTML = `<span>${esc(msg)}</span>`;
+  const close = document.createElement('button');
+  close.className='btn small ghost';
+  close.textContent='Dismiss';
+  close.onclick = ()=>el.remove();
+  el.appendChild(close);
+  wrap.appendChild(el);
+  if(!sticky) setTimeout(()=>el.remove(), 4500);
+}
+
+/* ================= UTIL ================= */
+function esc(s){
+  return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ================= RENDER ALL ================= */
+function render(){
+  document.getElementById('balanceNum').textContent = state.points;
+  renderTasks();
+  renderHomework();
+  renderJobs();
+  renderMarket();
+  renderActivity();
+}
+render(); // instant paint from local cache
+initFirebase(); // then connect to sync (or fall back to local-only mode)
+</script>
+</body>
+</html>
