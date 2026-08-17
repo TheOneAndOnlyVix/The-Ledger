@@ -298,9 +298,14 @@
   .buy-row input{ width:56px; }
   .session-banner{
     background:var(--forest-deep); color:#f4f1e6; border-radius:8px; padding:10px 14px;
-    display:flex; justify-content:space-between; align-items:center; font-size:12.5px; margin-top:8px;
+    display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:12.5px; margin-top:8px;
   }
+  .session-banner.paused{ background:var(--brass-deep); color:#2c1f05; }
   .session-banner .cd{ font-family:'IBM Plex Mono',monospace; font-weight:700; }
+  .session-banner .pause-btn{
+    background:rgba(255,255,255,0.18); color:inherit; box-shadow:none; padding:5px 10px; font-size:11.5px;
+  }
+  .session-banner.paused .pause-btn{ background:rgba(0,0,0,0.12); }
   .toast-wrap{ position:fixed; bottom:18px; right:18px; display:flex; flex-direction:column; gap:10px; z-index:999; max-width:320px;}
   .toast{
     background:var(--ink); color:var(--parchment); padding:12px 16px; border-radius:8px; box-shadow:var(--shadow);
@@ -495,15 +500,23 @@ function defaultState(){
     classes: [],
     jobs: JOB_DEFS.map((j,i)=>({id:'job'+i, ...j, lastCompleted:null})),
     market: {
-      game:            {total:0, paid:0, sessionEnd:null},
-      game_friend:     {total:0, paid:0, sessionEnd:null},
-      tv_with_hw:      {total:0, paid:0, sessionEnd:null},
-      tv_without_hw:   {total:0, paid:0, sessionEnd:null},
-      free_with_hw:    {total:0, paid:0, sessionEnd:null},
-      free_without_hw: {total:0, paid:0, sessionEnd:null},
+      game:            {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0},
+      game_friend:     {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0},
+      tv_with_hw:      {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0},
+      tv_without_hw:   {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0},
+      free_with_hw:    {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0},
+      free_without_hw: {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0},
     },
     log: []
   };
+}
+
+function mergeMarket(defMarket, savedMarket){
+  const out = {};
+  Object.keys(defMarket).forEach(key=>{
+    out[key] = Object.assign({}, defMarket[key], (savedMarket && savedMarket[key]) || {});
+  });
+  return out;
 }
 
 let state = loadLocal();
@@ -516,7 +529,7 @@ function loadLocal(){
     const def = defaultState();
     return Object.assign(def, parsed, {
       jobs: parsed.jobs && parsed.jobs.length ? parsed.jobs : def.jobs,
-      market: Object.assign(def.market, parsed.market || {})
+      market: mergeMarket(def.market, parsed.market)
     });
   }catch(e){ return defaultState(); }
 }
@@ -580,7 +593,7 @@ function attachRemoteListener(){
       const def = defaultState();
       state = Object.assign(def, remote, {
         jobs: remote.jobs && remote.jobs.length ? remote.jobs : def.jobs,
-        market: Object.assign(def.market, remote.market || {})
+        market: mergeMarket(def.market, remote.market)
       });
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       applyingRemote = false;
@@ -908,7 +921,7 @@ function renderMarket(){
   document.getElementById('marketGrid').innerHTML = items.map(it=>{
     const cat = state.market[it.key];
     const now = Date.now();
-    const active = cat.sessionEnd && cat.sessionEnd>now;
+    const active = (cat.sessionEnd && cat.sessionEnd>now) || cat.paused;
     const minId = 'buyMin-'+it.key, hrId = 'buyHr-'+it.key;
     return `
     <div class="market-card ${it.locked?'locked':''}">
@@ -920,9 +933,37 @@ function renderMarket(){
         <input type="number" min="0" id="${hrId}" placeholder="hr" ${it.locked?'disabled':''}>
         <button class="btn small ${it.locked?'ghost':'brass'}" ${it.locked?'disabled':''} onclick="buyMarket('${it.key}','${minId}','${hrId}')">Buy</button>
       </div>
-      ${active ? `<div class="session-banner"><span>Session running</span><span class="cd" data-end="${cat.sessionEnd}" id="cd-${it.key}"></span></div>` : ''}
+      ${active ? `
+      <div class="session-banner ${cat.paused?'paused':''}">
+        <span>${cat.paused ? 'Paused' : 'Session running'}</span>
+        <span class="cd" id="cd-${it.key}">${cat.paused ? fmtDuration(cat.pausedRemaining) : ''}</span>
+        <button class="btn small ghost pause-btn" onclick="${cat.paused?`resumeSession('${it.key}')`:`pauseSession('${it.key}')`}">${cat.paused?'Resume':'Pause'}</button>
+      </div>` : ''}
     </div>`;
   }).join('');
+}
+
+function pauseSession(key){
+  const cat = state.market[key];
+  const now = Date.now();
+  if(!cat.sessionEnd || cat.sessionEnd<=now) return;
+  cat.pausedRemaining = cat.sessionEnd - now;
+  cat.sessionEnd = null;
+  cat.paused = true;
+  notified.delete(key);
+  save();
+  toast('Paused — resume anytime to pick up where you left off.');
+}
+
+function resumeSession(key){
+  const cat = state.market[key];
+  if(!cat.paused) return;
+  cat.sessionEnd = Date.now() + (cat.pausedRemaining||0);
+  cat.pausedRemaining = 0;
+  cat.paused = false;
+  notified.delete(key);
+  save();
+  toast('Resumed.');
 }
 
 /* ---- session countdown / expiry notifications ---- */
@@ -930,6 +971,7 @@ const notified = new Set();
 function tickSessions(){
   const now = Date.now();
   Object.entries(state.market).forEach(([key,cat])=>{
+    if(cat.paused) return; // frozen — nothing to tick
     const el = document.getElementById('cd-'+key);
     if(cat.sessionEnd){
       if(cat.sessionEnd>now && el){
