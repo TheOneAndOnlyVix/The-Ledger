@@ -326,8 +326,35 @@
   .log-row{ display:flex; justify-content:space-between; font-size:12.5px; padding:6px 10px; background:#fffdf7; border-radius:6px; border:1px solid var(--panel-line);}
   .log-row .amt.earn{ color:var(--forest-deep); font-family:'IBM Plex Mono',monospace; font-weight:700;}
   .log-row .amt.spend{ color:var(--brick); font-family:'IBM Plex Mono',monospace; font-weight:700;}
+  .log-row .amt.debt{ color:var(--brick); font-family:'IBM Plex Mono',monospace; font-weight:700;}
 
-  .sync-status{
+  .debt-badge{
+    display:flex; align-items:center; gap:8px;
+    background:var(--brick); color:#fbe9e3; border-radius:999px; padding:8px 16px;
+    font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:700;
+    box-shadow:var(--shadow);
+  }
+  .debt-lock-banner{
+    background:#f4dcd6; border:1.5px solid var(--brick); color:#5c1f13;
+    border-radius:8px; padding:12px 16px; margin-bottom:20px; font-size:13px; font-weight:600;
+  }
+  .cost-preview{ font-size:12px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; min-height:16px; margin-top:2px;}
+  .cost-preview.short{ color:var(--brick); font-weight:700; }
+  .debt-modal-overlay{
+    position:fixed; inset:0; background:rgba(36,42,32,0.6); z-index:1100;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .debt-modal{
+    background:var(--panel); border-radius:14px; padding:28px 26px; max-width:360px;
+    box-shadow:0 10px 40px rgba(0,0,0,0.35);
+  }
+  .debt-modal h3{ font-family:'Fraunces',serif; margin:0 0 10px; font-size:19px; color:var(--brick); }
+  .debt-modal p{ font-size:13.5px; color:var(--ink-soft); margin:0 0 8px; line-height:1.5;}
+  .debt-modal .figures{ background:#fffdf7; border:1px solid var(--panel-line); border-radius:8px; padding:10px 14px; margin:14px 0; font-size:13px;}
+  .debt-modal .figures div{ display:flex; justify-content:space-between; padding:3px 0; }
+  .debt-modal .figures .owe{ font-weight:700; color:var(--brick); }
+  .debt-modal-actions{ display:flex; gap:10px; margin-top:16px; }
+  .debt-modal-actions .btn{ flex:1; }
     display:flex; align-items:center; gap:8px;
     font-size:12px; color:var(--ink-soft);
   }
@@ -368,6 +395,7 @@
     </div>
     <div style="display:flex; align-items:center; gap:14px;">
       <div id="syncStatus" class="sync-status"></div>
+      <div id="debtBadge"></div>
       <div class="balance-coin">
         <div class="coin">pt</div>
         <div>
@@ -496,6 +524,7 @@ const JOB_DEFS = [
 function defaultState(){
   return {
     points: 0,
+    debt: 0,
     tasks: [],
     classes: [],
     jobs: JOB_DEFS.map((j,i)=>({id:'job'+i, ...j, lastCompleted:null})),
@@ -800,10 +829,27 @@ function completeJob(jobId){
     input.value='';
   }
   job.lastCompleted = now;
-  state.points += reward;
-  addLog('earn', reward, job.name);
+  if(state.debt>0){
+    if(reward>=state.debt){
+      const leftover = reward-state.debt;
+      addLog('earn', state.debt, job.name+' (paid off debt)');
+      state.debt = 0;
+      if(leftover>0){
+        state.points += leftover;
+        addLog('earn', leftover, job.name);
+      }
+      toast(leftover>0 ? `Debt cleared! +${leftover} pts — ${job.name}` : `Debt reduced by ${reward} — ${job.name}`);
+    } else {
+      state.debt -= reward;
+      addLog('earn', reward, job.name+' (paid off debt)');
+      toast(`-${reward} off your debt — ${job.name}. ${state.debt} pts still owed.`);
+    }
+  } else {
+    state.points += reward;
+    addLog('earn', reward, job.name);
+    toast(`+${reward} pts — ${job.name}`);
+  }
   save();
-  toast(`+${reward} pts — ${job.name}`);
 }
 function renderJobs(){
   const wrap = document.getElementById('jobsList');
@@ -893,6 +939,10 @@ function marketItems(){
 function buyMarket(category, minInput, hourInput){
   const cat = state.market[category];
   const now = Date.now();
+  if(state.debt>0){
+    toast(`Everything is locked while you're ${state.debt} pts in debt. Pay it off through Jobs first.`);
+    return;
+  }
   if(cat.cooldownUntil && cat.cooldownUntil>now){
     toast(`${MARKET_LABELS[category]} is on cooldown for ${fmtDuration(cat.cooldownUntil-now)}.`);
     return;
@@ -902,27 +952,99 @@ function buyMarket(category, minInput, hourInput){
   const newTotal = cat.total + mins;
   const fullCost = Math.ceil(marketCost(category, newTotal));
   const due = Math.max(0, fullCost - cat.paid);
-  if(due > state.points){ toast(`Not enough points — needs ${due}, you have ${state.points}.`); return; }
-  state.points -= due;
-  cat.total = newTotal;
+
+  if(due > state.points){
+    const shortfall = due - state.points;
+    const hs = homeworkState();
+    if(hs==='due_today'){
+      toast(`Not enough points — needs ${due}, you have ${state.points}. Can't go into debt with homework due today.`);
+      return;
+    }
+    openDebtModal({category, minInput, hourInput, mins, due, shortfall});
+    return;
+  }
+
+  commitPurchase(category, minInput, hourInput, mins, due, 0);
+}
+
+function commitPurchase(category, minInput, hourInput, mins, due, debtAdded){
+  const cat = state.market[category];
+  const now = Date.now();
+  state.points -= (due - debtAdded);
+  if(debtAdded>0) state.debt += debtAdded;
+  cat.total += mins;
   cat.paid += due;
   cat.sessionEnd = Math.max(cat.sessionEnd||0, now) + mins*60000;
   cat.outOfTimeAt = null; // renewed in time, cancel the cooldown countdown
   notified.delete(category);
-  addLog('spend', due, MARKET_LABELS[category]+' ('+mins+'m)');
+  addLog(debtAdded>0 ? 'debt' : 'spend', due, MARKET_LABELS[category]+' ('+mins+'m)'+(debtAdded>0?' — went into debt':''));
   document.getElementById(minInput).value='';
   document.getElementById(hourInput).value='';
   save();
-  toast(due>0 ? `-${due} pts — ${mins}m of ${MARKET_LABELS[category]}` : `${mins}m of ${MARKET_LABELS[category]} — free`);
+  if(debtAdded>0){
+    toast(`Went ${debtAdded} pts into debt for ${mins}m of ${MARKET_LABELS[category]}. Everything's locked until it's paid off.`);
+  } else {
+    toast(due>0 ? `-${due} pts — ${mins}m of ${MARKET_LABELS[category]}` : `${mins}m of ${MARKET_LABELS[category]} — free`);
+  }
+}
+
+/* ---- debt confirmation modal ---- */
+function openDebtModal({category, minInput, hourInput, mins, due, shortfall}){
+  closeDebtModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'debt-modal-overlay';
+  overlay.id = 'debtModalOverlay';
+  overlay.innerHTML = `
+    <div class="debt-modal">
+      <h3>Go into debt?</h3>
+      <p>You don't have enough points for ${mins}m of ${esc(MARKET_LABELS[category])}. You can cover the gap by going into debt, but <strong>everything locks</strong> — no market purchases, and no new debt — until it's fully paid off through Jobs.</p>
+      <div class="figures">
+        <div><span>Cost</span><span>${due} pt</span></div>
+        <div><span>You have</span><span>${state.points} pt</span></div>
+        <div><span>Debt you'd take on</span><span class="owe">${shortfall} pt</span></div>
+      </div>
+      <div class="debt-modal-actions">
+        <button class="btn ghost" onclick="closeDebtModal()">Cancel</button>
+        <button class="btn brass" style="background:var(--brick); color:#fbe9e3;" onclick="confirmDebtPurchase('${category}','${minInput}','${hourInput}',${mins},${due},${shortfall})">Confirm debt</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+function closeDebtModal(){
+  const el = document.getElementById('debtModalOverlay');
+  if(el) el.remove();
+}
+function confirmDebtPurchase(category, minInput, hourInput, mins, due, shortfall){
+  // re-check guardrails in case anything changed since the modal opened
+  if(state.debt>0){ toast('Already in debt — pay it off first.'); closeDebtModal(); return; }
+  if(homeworkState()==='due_today'){ toast("Can't go into debt with homework due today."); closeDebtModal(); return; }
+  closeDebtModal();
+  commitPurchase(category, minInput, hourInput, mins, due, shortfall);
 }
 
 function renderMarket(){
   const hs = homeworkState();
+  const inDebt = state.debt>0;
   const statusEl = document.getElementById('marketStatus');
   const statusText = hs==='due_today' ? 'Homework due today — only Free Time is unlocked.'
     : hs==='pending' ? 'Homework pending, none due today — Free Time and TV Time are unlocked.'
     : 'No homework outstanding — everything is unlocked.';
   statusEl.innerHTML = `<span class="dot ${hs}"></span> ${statusText}`;
+  statusEl.style.display = inDebt ? 'none' : 'flex';
+
+  const debtBanner = document.getElementById('marketDebtBanner');
+  if(inDebt){
+    if(!debtBanner){
+      const div = document.createElement('div');
+      div.id = 'marketDebtBanner';
+      div.className = 'debt-lock-banner';
+      statusEl.insertAdjacentElement('afterend', div);
+    }
+    document.getElementById('marketDebtBanner').textContent =
+      `Everything is locked while you're in debt. You owe ${state.debt} pts — earn it back through Jobs before anything unlocks or new debt can be added.`;
+  } else if(debtBanner){
+    debtBanner.remove();
+  }
 
   const items = marketItems();
   const nowTs = Date.now();
@@ -931,19 +1053,20 @@ function renderMarket(){
     const now = nowTs;
     const active = (cat.sessionEnd && cat.sessionEnd>now) || cat.paused;
     const onCooldown = cat.cooldownUntil && cat.cooldownUntil>now;
-    const buyLocked = it.locked || onCooldown;
+    const buyLocked = it.locked || onCooldown || inDebt;
     const minId = 'buyMin-'+it.key, hrId = 'buyHr-'+it.key;
     return `
-    <div class="market-card ${it.locked?'locked':''}">
+    <div class="market-card ${buyLocked?'locked':''}">
       <h4>${it.label}</h4>
       <div class="stat-line">total bought: ${cat.total}m · spent: ${cat.paid}pt</div>
       ${it.key==='free_without_hw' ? '<div class="stat-line">Free while no homework is outstanding.</div>' : ''}
-      ${onCooldown ? `<div class="stat-line" style="color:var(--brick); font-weight:600;">On cooldown — ${fmtDuration(cat.cooldownUntil-now)}</div>` : ''}
+      ${onCooldown && !inDebt ? `<div class="stat-line" style="color:var(--brick); font-weight:600;">On cooldown — ${fmtDuration(cat.cooldownUntil-now)}</div>` : ''}
       <div class="buy-row">
-        <input type="number" min="0" id="${minId}" placeholder="min" ${buyLocked?'disabled':''}>
-        <input type="number" min="0" id="${hrId}" placeholder="hr" ${buyLocked?'disabled':''}>
-        <button class="btn small ${buyLocked?'ghost':'brass'}" ${buyLocked?'disabled':''} onclick="buyMarket('${it.key}','${minId}','${hrId}')">Buy</button>
+        <input type="number" min="0" id="${minId}" placeholder="min" ${buyLocked?'disabled':''} oninput="updateCostPreview('${it.key}')">
+        <input type="number" min="0" id="${hrId}" placeholder="hr" ${buyLocked?'disabled':''} oninput="updateCostPreview('${it.key}')">
+        <button class="btn small ${buyLocked?'ghost':'brass'}" id="buybtn-${it.key}" ${buyLocked?'disabled':''} onclick="buyMarket('${it.key}','${minId}','${hrId}')">Buy</button>
       </div>
+      <div class="cost-preview" id="cost-${it.key}"></div>
       ${active ? `
       <div class="session-banner ${cat.paused?'paused':''}">
         <span>${cat.paused ? 'Paused' : 'Session running'}</span>
@@ -952,6 +1075,33 @@ function renderMarket(){
       </div>` : ''}
     </div>`;
   }).join('');
+
+  renderDebtBadge();
+}
+
+function renderDebtBadge(){
+  const el = document.getElementById('debtBadge');
+  if(state.debt>0){
+    el.innerHTML = `<div class="debt-badge">⚠ ${state.debt} pt debt</div>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+function updateCostPreview(key){
+  const cat = state.market[key];
+  const minEl = document.getElementById('buyMin-'+key);
+  const hrEl = document.getElementById('buyHr-'+key);
+  const preview = document.getElementById('cost-'+key);
+  if(!minEl || !hrEl || !preview) return;
+  const mins = (parseFloat(minEl.value)||0) + (parseFloat(hrEl.value)||0)*60;
+  if(mins<=0){ preview.textContent=''; preview.classList.remove('short'); return; }
+  const newTotal = cat.total + mins;
+  const fullCost = Math.ceil(marketCost(key, newTotal));
+  const due = Math.max(0, fullCost - cat.paid);
+  const short = due > state.points;
+  preview.textContent = due===0 ? `Cost: free` : `Cost: ${due} pt${short ? ` (you have ${state.points})` : ''}`;
+  preview.classList.toggle('short', short);
 }
 
 function pauseSession(key){
@@ -1033,10 +1183,11 @@ if('Notification' in window && Notification.permission==='default'){
 /* ================= ACTIVITY MONITOR ================= */
 function renderActivity(){
   const earned = state.log.filter(l=>l.type==='earn').reduce((s,l)=>s+l.amount,0);
-  const spent = state.log.filter(l=>l.type==='spend').reduce((s,l)=>s+l.amount,0);
+  const spent = state.log.filter(l=>l.type==='spend'||l.type==='debt').reduce((s,l)=>s+l.amount,0);
   const jobsDone = state.log.filter(l=>l.type==='earn').length;
   document.getElementById('statGrid').innerHTML = `
     <div class="stat-card"><div class="v">${state.points}</div><div class="l">Current balance</div></div>
+    <div class="stat-card"><div class="v" style="${state.debt>0?'color:var(--brick);':''}">${state.debt}</div><div class="l">Current debt</div></div>
     <div class="stat-card"><div class="v">${earned}</div><div class="l">Total earned</div></div>
     <div class="stat-card"><div class="v">${spent}</div><div class="l">Total spent</div></div>
     <div class="stat-card"><div class="v">${jobsDone}</div><div class="l">Jobs completed</div></div>
