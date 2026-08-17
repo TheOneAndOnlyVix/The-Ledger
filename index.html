@@ -799,17 +799,45 @@ function renderJobs(){
     const remain = j.lastCompleted ? (j.lastCompleted + j.cooldownHours*3600000) - now : 0;
     const locked = remain>0;
     return `
-    <div class="job-card ${locked?'locked':''}">
+    <div class="job-card ${locked?'locked':''}" id="jobcard-${j.id}">
       <div class="job-main">
         <div class="job-name">${esc(j.name)}</div>
         <div class="job-meta">base ${j.baseReward} pt · cooldown ${fmtCooldown(j.cooldownHours)} ${j.baseTimeMin?('· base time '+fmtMins(j.baseTimeMin)):''}</div>
-        ${locked?`<div class="cooldown-txt">${fmtDuration(remain)}</div>`:''}
+        <div class="cooldown-txt" id="cooldown-${j.id}">${locked?fmtDuration(remain):''}</div>
       </div>
       ${j.baseTimeMin?`<input type="number" min="1" class="job-time-input" id="jobTime-${j.id}" placeholder="mins" ${locked?'disabled':''}>`:''}
       <div class="job-reward">${j.baseReward}pt</div>
-      <button class="btn small ${locked?'ghost':'brass'}" ${locked?'disabled':''} onclick="completeJob('${j.id}')">Done</button>
+      <button class="btn small ${locked?'ghost':'brass'}" id="jobbtn-${j.id}" ${locked?'disabled':''} onclick="completeJob('${j.id}')">Done</button>
     </div>`;
   }).join('');
+}
+
+function updateJobCooldowns(){
+  const now = Date.now();
+  let anyChanged = false;
+  state.jobs.forEach(j=>{
+    const remain = j.lastCompleted ? (j.lastCompleted + j.cooldownHours*3600000) - now : 0;
+    const locked = remain>0;
+    const card = document.getElementById('jobcard-'+j.id);
+    if(!card) return; // list not rendered yet
+    const wasLocked = card.classList.contains('locked');
+    const cdEl = document.getElementById('cooldown-'+j.id);
+    if(cdEl) cdEl.textContent = locked ? fmtDuration(remain) : '';
+    // only touch classes/disabled state when the lock status actually flips,
+    // so we never rebuild or re-focus-steal input elements mid-typing
+    if(locked !== wasLocked){
+      anyChanged = true;
+      card.classList.toggle('locked', locked);
+      const input = document.getElementById('jobTime-'+j.id);
+      if(input) input.disabled = locked;
+      const btn = document.getElementById('jobbtn-'+j.id);
+      if(btn){
+        btn.disabled = locked;
+        btn.classList.toggle('ghost', locked);
+        btn.classList.toggle('brass', !locked);
+      }
+    }
+  });
 }
 function fmtCooldown(h){
   if(h<24) return h+'h';
@@ -912,8 +940,8 @@ function tickSessions(){
       }
     }
   });
-  // refresh job cooldown labels without a full re-render flash
-  if(document.getElementById('sec-jobs').classList.contains('active')) renderJobs();
+  // refresh job cooldown labels without a full re-render (avoids yanking focus out of inputs)
+  if(document.getElementById('sec-jobs').classList.contains('active')) updateJobCooldowns();
 }
 setInterval(tickSessions, 1000);
 
