@@ -988,7 +988,66 @@ function commitPurchase(category, minInput, hourInput, mins, due, debtAdded){
   }
 }
 
-/* ---- debt confirmation modal ---- */
+/* ---- end session early, with refund ---- */
+function remainingMinutes(cat){
+  const now = Date.now();
+  if(cat.paused) return (cat.pausedRemaining||0)/60000;
+  if(cat.sessionEnd && cat.sessionEnd>now) return (cat.sessionEnd-now)/60000;
+  return 0;
+}
+function openEndEarlyModal(key){
+  const cat = state.market[key];
+  const remainMin = remainingMinutes(cat);
+  if(remainMin<=0){ toast('No time left on this session.'); return; }
+  const ratePerMin = cat.total>0 ? cat.paid/cat.total : 0;
+  const refund = Math.round(0.5 * remainMin * ratePerMin);
+  closeDebtModal(); // reuse the same overlay-clearing helper
+  closeEndEarlyModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'debt-modal-overlay';
+  overlay.id = 'endEarlyOverlay';
+  overlay.innerHTML = `
+    <div class="debt-modal">
+      <h3 style="color:var(--slate);">End session early?</h3>
+      <p>You'll immediately end ${esc(MARKET_LABELS[key])} with time still left on the clock. You get back half the value of the unused time.</p>
+      <div class="figures">
+        <div><span>Time remaining</span><span>${fmtMinutesReadable(remainMin)}</span></div>
+        <div><span>Refund (50%)</span><span class="owe" style="color:var(--forest-deep);">+${refund} pt</span></div>
+      </div>
+      <div class="debt-modal-actions">
+        <button class="btn ghost" onclick="closeEndEarlyModal()">Cancel</button>
+        <button class="btn brass" onclick="confirmEndEarly('${key}', ${refund})">End session</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+function closeEndEarlyModal(){
+  const el = document.getElementById('endEarlyOverlay');
+  if(el) el.remove();
+}
+function confirmEndEarly(key, refund){
+  const cat = state.market[key];
+  const remainMin = remainingMinutes(cat);
+  closeEndEarlyModal();
+  if(remainMin<=0){ toast('No time was left on this session.'); return; }
+  cat.sessionEnd = null;
+  cat.paused = false;
+  cat.pausedRemaining = 0;
+  cat.outOfTimeAt = null;
+  notified.delete(key);
+  if(refund>0){
+    state.points += refund;
+    addLog('earn', refund, MARKET_LABELS[key]+' (ended early, 50% refund)');
+  }
+  save();
+  toast(refund>0 ? `Session ended — +${refund} pts refunded.` : 'Session ended.');
+}
+function fmtMinutesReadable(mins){
+  const m = Math.round(mins);
+  if(m<60) return m+'m';
+  const h = Math.floor(m/60), rem = m%60;
+  return rem>0 ? `${h}h ${rem}m` : `${h}h`;
+}
 function openDebtModal({category, minInput, hourInput, mins, due, shortfall}){
   closeDebtModal();
   const overlay = document.createElement('div');
@@ -1071,7 +1130,10 @@ function renderMarket(){
       <div class="session-banner ${cat.paused?'paused':''}">
         <span>${cat.paused ? 'Paused' : 'Session running'}</span>
         <span class="cd" id="cd-${it.key}">${cat.paused ? fmtDuration(cat.pausedRemaining) : ''}</span>
-        <button class="btn small ghost pause-btn" onclick="${cat.paused?`resumeSession('${it.key}')`:`pauseSession('${it.key}')`}">${cat.paused?'Resume':'Pause'}</button>
+        <div style="display:flex; gap:6px;">
+          <button class="btn small ghost pause-btn" onclick="${cat.paused?`resumeSession('${it.key}')`:`pauseSession('${it.key}')`}">${cat.paused?'Resume':'Pause'}</button>
+          <button class="btn small ghost pause-btn" onclick="openEndEarlyModal('${it.key}')">End early</button>
+        </div>
       </div>` : ''}
     </div>`;
   }).join('');
