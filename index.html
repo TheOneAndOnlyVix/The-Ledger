@@ -531,7 +531,7 @@ function defaultState(){
     debt: 0,
     tasks: [],
     classes: [],
-    jobs: JOB_DEFS.map((j,i)=>({id:'job'+i, ...j, lastCompleted:null})),
+    jobs: JOB_DEFS.map((j,i)=>({id:'job'+i, ...j, lastCompleted:null, cooldownOverrideHours:null})),
     market: {
       game:            {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0, outOfTimeAt:null, cooldownUntil:null},
       game_friend:     {total:0, paid:0, sessionEnd:null, paused:false, pausedRemaining:0, outOfTimeAt:null, cooldownUntil:null},
@@ -553,15 +553,24 @@ function mergeMarket(defMarket, savedMarket){
 }
 
 function mergeJobs(savedJobs){
-  const def = JOB_DEFS.map((j,i)=>({id:'job'+i, ...j, lastCompleted:null}));
+  const def = JOB_DEFS.map((j,i)=>({id:'job'+i, ...j, lastCompleted:null, cooldownOverrideHours:null}));
   if(!savedJobs || !savedJobs.length) return def.sort((a,b)=>a.baseReward-b.baseReward);
   const byName = {};
   savedJobs.forEach(j=>{ byName[j.name] = j; });
   const merged = def.map(j=>{
     const existing = byName[j.name];
-    return existing ? Object.assign({}, j, {lastCompleted: existing.lastCompleted}) : j;
+    return existing ? Object.assign({}, j, {
+      lastCompleted: existing.lastCompleted,
+      cooldownOverrideHours: existing.cooldownOverrideHours ?? null
+    }) : j;
   });
   return merged.sort((a,b)=>a.baseReward-b.baseReward);
+}
+
+// effective cooldown length to use right now for this job: a cascaded
+// override (from a related job sharing components) if one is active, else its own
+function effectiveCooldownHours(job){
+  return job.cooldownOverrideHours!=null ? job.cooldownOverrideHours : job.cooldownHours;
 }
 
 let state = loadLocal();
@@ -828,13 +837,14 @@ function fmtDuration(ms){
   if(hrs<24) return hrs.toFixed(1).replace('.0','')+'h left';
   return (hrs/24).toFixed(1).replace('.0','')+'d left';
 }
-function isSubset(small, big){
-  return small.length>0 && small.every(t=>big.includes(t));
+function sharesAnyTag(a, b){
+  if(!a || !a.length || !b || !b.length) return false;
+  return a.some(t=>b.includes(t));
 }
 function completeJob(jobId){
   const job = state.jobs.find(j=>j.id===jobId);
   const now = Date.now();
-  if(job.lastCompleted && (now-job.lastCompleted) < job.cooldownHours*3600000){
+  if(job.lastCompleted && (now-job.lastCompleted) < effectiveCooldownHours(job)*3600000){
     toast(job.name+' is still cooling down.'); return;
   }
   let reward = job.baseReward;
@@ -848,15 +858,21 @@ function completeJob(jobId){
     input.value='';
   }
   job.lastCompleted = now;
+  job.cooldownOverrideHours = null; // a direct completion always uses this job's own full cooldown
 
-  // put every job whose components are fully covered by this one on cooldown too,
-  // each for its own cooldown duration — not the completed job's.
+  // any other job that shares a component with this one also goes on cooldown —
+  // but only for the SHORTER of the two cooldowns, since only that shared part
+  // was actually just done. This covers both directions: finishing a bigger job
+  // (dining room + sweep + mop) locks its smaller pieces (dining room alone), and
+  // finishing a smaller job (dining room + sweep) also partially locks bigger
+  // jobs that build on it (dining room + sweep + mop) until that shared part goes stale again.
   const affected = [];
   if(job.tags && job.tags.length){
     state.jobs.forEach(other=>{
-      if(other.id===job.id || !other.tags || !other.tags.length) return;
-      if(isSubset(other.tags, job.tags)){
+      if(other.id===job.id) return;
+      if(sharesAnyTag(other.tags, job.tags)){
         other.lastCompleted = now;
+        other.cooldownOverrideHours = Math.min(other.cooldownHours, job.cooldownHours);
         affected.push(other.name);
       }
     });
@@ -889,7 +905,7 @@ function renderJobs(){
   const wrap = document.getElementById('jobsList');
   const now = Date.now();
   wrap.innerHTML = state.jobs.map(j=>{
-    const remain = j.lastCompleted ? (j.lastCompleted + j.cooldownHours*3600000) - now : 0;
+    const remain = j.lastCompleted ? (j.lastCompleted + effectiveCooldownHours(j)*3600000) - now : 0;
     const locked = remain>0;
     return `
     <div class="job-card ${locked?'locked':''}" id="jobcard-${j.id}">
@@ -909,7 +925,7 @@ function updateJobCooldowns(){
   const now = Date.now();
   let anyChanged = false;
   state.jobs.forEach(j=>{
-    const remain = j.lastCompleted ? (j.lastCompleted + j.cooldownHours*3600000) - now : 0;
+    const remain = j.lastCompleted ? (j.lastCompleted + effectiveCooldownHours(j)*3600000) - now : 0;
     const locked = remain>0;
     const card = document.getElementById('jobcard-'+j.id);
     if(!card) return; // list not rendered yet
