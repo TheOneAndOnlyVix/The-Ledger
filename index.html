@@ -519,6 +519,10 @@ const JOB_DEFS = [
   {name:'Clean bathroom',                          baseReward:90, cooldownHours:144,  baseTimeMin:180},
   {name:'Clean room',                              baseReward:20, cooldownHours:4.5,  baseTimeMin:10},
   {name:'Sweep second living room',                baseReward:16, cooldownHours:10,   baseTimeMin:10},
+  {name:'Take out trash',                          baseReward:18, cooldownHours:36,   baseTimeMin:10},
+  {name:'Take out recycle',                        baseReward:23, cooldownHours:36,   baseTimeMin:15},
+  {name:'Take out trash + to front',                baseReward:21, cooldownHours:0,    baseTimeMin:12.5},
+  {name:'Take out trash and recycle + to front',    baseReward:30, cooldownHours:0,    baseTimeMin:20},
 ].sort((a,b)=>a.baseReward-b.baseReward);
 
 function defaultState(){
@@ -548,6 +552,18 @@ function mergeMarket(defMarket, savedMarket){
   return out;
 }
 
+function mergeJobs(savedJobs){
+  const def = JOB_DEFS.map((j,i)=>({id:'job'+i, ...j, lastCompleted:null}));
+  if(!savedJobs || !savedJobs.length) return def.sort((a,b)=>a.baseReward-b.baseReward);
+  const byName = {};
+  savedJobs.forEach(j=>{ byName[j.name] = j; });
+  const merged = def.map(j=>{
+    const existing = byName[j.name];
+    return existing ? Object.assign({}, j, {lastCompleted: existing.lastCompleted}) : j;
+  });
+  return merged.sort((a,b)=>a.baseReward-b.baseReward);
+}
+
 let state = loadLocal();
 function loadLocal(){
   try{
@@ -557,7 +573,7 @@ function loadLocal(){
     // merge in case job list changed between versions
     const def = defaultState();
     return Object.assign(def, parsed, {
-      jobs: parsed.jobs && parsed.jobs.length ? parsed.jobs : def.jobs,
+      jobs: mergeJobs(parsed.jobs),
       market: mergeMarket(def.market, parsed.market)
     });
   }catch(e){ return defaultState(); }
@@ -621,7 +637,7 @@ function attachRemoteListener(){
       const remote = snap.data().state;
       const def = defaultState();
       state = Object.assign(def, remote, {
-        jobs: remote.jobs && remote.jobs.length ? remote.jobs : def.jobs,
+        jobs: mergeJobs(remote.jobs),
         market: mergeMarket(def.market, remote.market)
       });
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -899,6 +915,7 @@ function updateJobCooldowns(){
   });
 }
 function fmtCooldown(h){
+  if(h<=0) return 'no cooldown';
   if(h<24) return h+'h';
   return (h/24)+'d';
 }
