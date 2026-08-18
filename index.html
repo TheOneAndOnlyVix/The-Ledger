@@ -501,28 +501,28 @@
 const STORAGE_KEY = 'ledgerAppState_v1';
 
 const JOB_DEFS = [
-  {name:'Take out Lola',                          baseReward:5,  cooldownHours:2.5,  baseTimeMin:null},
-  {name:'Clean dining table',                     baseReward:7,  cooldownHours:3.5,  baseTimeMin:15},
-  {name:'Clean dining room',                      baseReward:10, cooldownHours:2.5,  baseTimeMin:20},
-  {name:'Clean dining room + sweep',               baseReward:15, cooldownHours:3,    baseTimeMin:25},
-  {name:'Do dishes',                              baseReward:20, cooldownHours:3,    baseTimeMin:25},
-  {name:'Clean dining room + sweep + mop',         baseReward:50, cooldownHours:72,   baseTimeMin:60},
-  {name:'Do dishes + clear dishwasher',            baseReward:27, cooldownHours:16,   baseTimeMin:45},
-  {name:'Do dishes + mop',                        baseReward:62, cooldownHours:96,   baseTimeMin:60},
-  {name:'Do dishes + clear dishwasher + mop',      baseReward:72, cooldownHours:96,   baseTimeMin:75},
-  {name:'Clean living room',                      baseReward:14, cooldownHours:3,    baseTimeMin:15},
-  {name:'Clean living room + sweep',               baseReward:19, cooldownHours:3.5,  baseTimeMin:25},
-  {name:'Clean living room + sweep + mop',         baseReward:60, cooldownHours:120,  baseTimeMin:75},
-  {name:'Continue laundry cycle',                  baseReward:41, cooldownHours:24,   baseTimeMin:15},
-  {name:'Continue laundry cycle + fold clothes',   baseReward:90, cooldownHours:24,   baseTimeMin:90},
-  {name:'Clean bathroom counter',                  baseReward:7,  cooldownHours:7,    baseTimeMin:10},
-  {name:'Clean bathroom',                          baseReward:90, cooldownHours:144,  baseTimeMin:180},
-  {name:'Clean room',                              baseReward:20, cooldownHours:4.5,  baseTimeMin:10},
-  {name:'Sweep second living room',                baseReward:16, cooldownHours:10,   baseTimeMin:10},
-  {name:'Take out trash',                          baseReward:18, cooldownHours:36,   baseTimeMin:10},
-  {name:'Take out recycle',                        baseReward:23, cooldownHours:36,   baseTimeMin:15},
-  {name:'Take out trash + to front',                baseReward:21, cooldownHours:0,    baseTimeMin:12.5},
-  {name:'Take out trash and recycle + to front',    baseReward:30, cooldownHours:0,    baseTimeMin:20},
+  {name:'Take out Lola',                          baseReward:5,  cooldownHours:2.5,  baseTimeMin:null, tags:['lola']},
+  {name:'Clean dining table',                     baseReward:7,  cooldownHours:3.5,  baseTimeMin:15,   tags:['dine_table']},
+  {name:'Clean dining room',                      baseReward:10, cooldownHours:2.5,  baseTimeMin:20,   tags:['dine_room']},
+  {name:'Clean dining room + sweep',               baseReward:15, cooldownHours:3,    baseTimeMin:25,   tags:['dine_room','dine_sweep']},
+  {name:'Do dishes',                              baseReward:20, cooldownHours:3,    baseTimeMin:25,   tags:['dishes']},
+  {name:'Clean dining room + sweep + mop',         baseReward:50, cooldownHours:72,   baseTimeMin:60,   tags:['dine_room','dine_sweep','dine_mop']},
+  {name:'Do dishes + clear dishwasher',            baseReward:27, cooldownHours:16,   baseTimeMin:45,   tags:['dishes','dishwasher']},
+  {name:'Do dishes + mop',                        baseReward:62, cooldownHours:96,   baseTimeMin:60,   tags:['dishes','kitchen_mop']},
+  {name:'Do dishes + clear dishwasher + mop',      baseReward:72, cooldownHours:96,   baseTimeMin:75,   tags:['dishes','dishwasher','kitchen_mop']},
+  {name:'Clean living room',                      baseReward:14, cooldownHours:3,    baseTimeMin:15,   tags:['living_room']},
+  {name:'Clean living room + sweep',               baseReward:19, cooldownHours:3.5,  baseTimeMin:25,   tags:['living_room','living_sweep']},
+  {name:'Clean living room + sweep + mop',         baseReward:60, cooldownHours:120,  baseTimeMin:75,   tags:['living_room','living_sweep','living_mop']},
+  {name:'Continue laundry cycle',                  baseReward:41, cooldownHours:24,   baseTimeMin:15,   tags:['laundry']},
+  {name:'Continue laundry cycle + fold clothes',   baseReward:90, cooldownHours:24,   baseTimeMin:90,   tags:['laundry','fold']},
+  {name:'Clean bathroom counter',                  baseReward:7,  cooldownHours:7,    baseTimeMin:10,   tags:['bath_counter']},
+  {name:'Clean bathroom',                          baseReward:90, cooldownHours:144,  baseTimeMin:180,  tags:['bath_counter','bath_full']},
+  {name:'Clean room',                              baseReward:20, cooldownHours:4.5,  baseTimeMin:10,   tags:['room']},
+  {name:'Sweep second living room',                baseReward:16, cooldownHours:10,   baseTimeMin:10,   tags:['living_room2']},
+  {name:'Take out trash',                          baseReward:18, cooldownHours:36,   baseTimeMin:10,   tags:['trash']},
+  {name:'Take out recycle',                        baseReward:23, cooldownHours:36,   baseTimeMin:15,   tags:['recycle']},
+  {name:'Take out trash + to front',                baseReward:21, cooldownHours:0,    baseTimeMin:12.5, tags:['trash','trash_front']},
+  {name:'Take out trash and recycle + to front',    baseReward:30, cooldownHours:0,    baseTimeMin:20,   tags:['trash','recycle','trash_front']},
 ].sort((a,b)=>a.baseReward-b.baseReward);
 
 function defaultState(){
@@ -828,6 +828,9 @@ function fmtDuration(ms){
   if(hrs<24) return hrs.toFixed(1).replace('.0','')+'h left';
   return (hrs/24).toFixed(1).replace('.0','')+'d left';
 }
+function isSubset(small, big){
+  return small.length>0 && small.every(t=>big.includes(t));
+}
 function completeJob(jobId){
   const job = state.jobs.find(j=>j.id===jobId);
   const now = Date.now();
@@ -845,6 +848,21 @@ function completeJob(jobId){
     input.value='';
   }
   job.lastCompleted = now;
+
+  // put every job whose components are fully covered by this one on cooldown too,
+  // each for its own cooldown duration — not the completed job's.
+  const affected = [];
+  if(job.tags && job.tags.length){
+    state.jobs.forEach(other=>{
+      if(other.id===job.id || !other.tags || !other.tags.length) return;
+      if(isSubset(other.tags, job.tags)){
+        other.lastCompleted = now;
+        affected.push(other.name);
+      }
+    });
+  }
+  const affectedNote = affected.length ? ` (also cooling down: ${affected.join(', ')})` : '';
+
   if(state.debt>0){
     if(reward>=state.debt){
       const leftover = reward-state.debt;
@@ -854,16 +872,16 @@ function completeJob(jobId){
         state.points += leftover;
         addLog('earn', leftover, job.name);
       }
-      toast(leftover>0 ? `Debt cleared! +${leftover} pts — ${job.name}` : `Debt reduced by ${reward} — ${job.name}`);
+      toast(leftover>0 ? `Debt cleared! +${leftover} pts — ${job.name}${affectedNote}` : `Debt reduced by ${reward} — ${job.name}${affectedNote}`);
     } else {
       state.debt -= reward;
       addLog('earn', reward, job.name+' (paid off debt)');
-      toast(`-${reward} off your debt — ${job.name}. ${state.debt} pts still owed.`);
+      toast(`-${reward} off your debt — ${job.name}. ${state.debt} pts still owed.${affectedNote}`);
     }
   } else {
     state.points += reward;
     addLog('earn', reward, job.name);
-    toast(`+${reward} pts — ${job.name}`);
+    toast(`+${reward} pts — ${job.name}${affectedNote}`);
   }
   save();
 }
