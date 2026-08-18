@@ -1138,6 +1138,7 @@ function tickSessions(){
     // clear an expired cooldown
     if(cat.cooldownUntil && cat.cooldownUntil<=now){
       cat.cooldownUntil = null;
+      cat.sessionEnd = null; // defensive: wipe any leftover stale expiry so it can't replay
       marketNeedsRefresh = true;
     }
 
@@ -1158,6 +1159,7 @@ function tickSessions(){
     if(cat.outOfTimeAt && !cat.cooldownUntil && (now - cat.outOfTimeAt) >= 5*60000){
       cat.cooldownUntil = now + 30*60000;
       cat.outOfTimeAt = null;
+      cat.sessionEnd = null; // defensive: make sure nothing stale is left to expire again later
       marketNeedsRefresh = true;
       toast(`${MARKET_LABELS[key]} is on a 30-minute cooldown after running out unrenewed.`);
     }
@@ -1169,7 +1171,7 @@ function tickSessions(){
 setInterval(tickSessions, 1000);
 
 function notifyOutOfTime(label){
-  toast(`⏱ Out of time on ${label}. Head to the Market to renew.`, true);
+  toast(`Out of time on ${label}. Head to the Market to renew.`, true);
   if('Notification' in window && Notification.permission==='granted'){
     new Notification("Time's up", {body:`${label} has run out. Renew it in the Market.`});
   }
