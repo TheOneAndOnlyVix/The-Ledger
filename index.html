@@ -1145,9 +1145,10 @@ function tickSessions(){
     if(cat.sessionEnd){
       if(cat.sessionEnd>now && el){
         el.textContent = fmtDuration(cat.sessionEnd-now);
-      } else if(cat.sessionEnd<=now && !notified.has(key)){
+      } else if(cat.sessionEnd<=now && !notified.has(key) && !cat.outOfTimeAt && !cat.cooldownUntil){
         notified.add(key);
         cat.outOfTimeAt = now;
+        cat.sessionEnd = null; // fully handled — nothing left to expire
         notifyOutOfTime(MARKET_LABELS[key]);
         marketNeedsRefresh = true;
       }
